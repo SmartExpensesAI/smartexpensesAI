@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartExpense – AI Receipt Scanner & Tracker</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Inter, Arial, sans-serif;
+    }
+
+    :root {
+      --green: #1faa59;
+      --green-dark: #0f8a43;
+      --bg: #f4f7f5;
+      --card: #ffffff;
+      --text: #1b1b1b;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --danger: #ef4444;
+    }
+
+    body.dark {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --border: #334155;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: 0.3s ease;
+      padding-bottom: 90px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 16px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .title {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+
+    .badge {
+      background: gold;
+      color: black;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    button {
+      background: var(--green);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      background: var(--green-dark);
+    }
+
+    .danger {
+      background: var(--danger);
+    }
+
+    .progress {
+      width: 100%;
+      height: 12px;
+      background: #ddd;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--green);
+      transition: width 0.2s ease;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    .small-btn {
+      padding: 8px 12px;
+      font-size: 12px;
+      width: auto;
+    }
+
+    .tabs {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      padding: 10px 0;
+      z-index: 100;
+    }
+
+    .tab {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+      flex: 1;
+    }
+
+    .tab.active {
+      color: var(--green);
+      font-weight: bold;
+    }
+
+    .page {
+      display: none;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .stats {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-top: 10px;
+      color: var(--green);
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .premium-box {
+      border: 2px dashed gold;
+      text-align: center;
+    }
+
+    .watermark {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+    }
+
+    @media(max-width: 700px) {
+      .row {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        font-size: 12px;
+      }
+
+      th, td {
+        padding: 6px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+
+    <div class="header">
+      <div>
+        <div class="title">SmartExpense</div>
+        <small>AI Receipt Scanner & Tracker</small>
+      </div>
+
+      <div id="proBadge"></div>
+    </div>
+
+    <!-- EXPENSES PAGE -->
+    <div id="expensesPage" class="page active">
+
+      <div class="card">
+        <h3>Add Expense</h3>
+
+        <input type="number" id="amount" placeholder="Amount" />
+
+        <select id="category">
+          <option>Food</option>
+          <option>Transport</option>
+          <option>Shopping</option>
+          <option>Bills</option>
+          <option>Entertainment</option>
+          <option>Other</option>
+        </select>
+
+        <div id="customCategoryContainer" style="display:none;">
+          <input type="text" id="customCategory" placeholder="Custom Category" />
+        </div>
+
+        <input type="date" id="date" />
+
+        <textarea id="note" placeholder="Optional note"></textarea>
+
+        <button onclick="addExpense()">Save Expense</button>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3>Expenses</h3>
+          <button class="small-btn" onclick="exportCSV()">Export CSV</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Note</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="expenseTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SCANNER PAGE -->
+    <div id="scannerPage" class="page">
+
+      <div class="card">
+        <h3>AI Receipt Scanner</h3>
+
+        <p id="scanInfo"></p>
+
+        <input type="file" id="receiptImage" accept="image/*" />
+
+        <button onclick="scanReceipt()">Scan Receipt</button>
+
+        <div class="progress" id="progressContainer" style="display:none;">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <div id="ocrResult"></div>
+      </div>
+
+      <div class="card premium-box">
+        <h3>Unlock SmartExpense Pro</h3>
+        <p>Unlimited scans • Dark Mode • Custom Categories • Clean CSV</p>
+
+        <button onclick="unlockPro()">Unlock Pro</button>
+      </div>
+
+      <div class="card">
+        <h3>Settings</h3>
+
+        <button onclick="toggleDarkMode()" id="darkBtn">
+          Toggle Dark Mode
+        </button>
+
+        <button class="danger" onclick="resetApp()">
+          Reset App
+        </button>
+      </div>
+
+    </div>
+
+    <!-- DASHBOARD PAGE -->
+    <div id="dashboardPage" class="page">
+
+      <div class="card">
+        <h3>This Month Spending</h3>
+        <div class="stats" id="monthlyTotal">$0</div>
+      </div>
+
+      <div class="card">
+        <h3>Expenses by Category</h3>
+        <canvas id="expenseChart"></canvas>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      Made with ♥ by YourName
+    </div>
+
+  </div>
+
+  <!-- Bottom Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('expenses')">Expenses</div>
+    <div class="tab" onclick="switchTab('scanner')">Scanner</div>
+    <div class="tab" onclick="switchTab('dashboard')">Dashboard</div>
+  </div>
+
+  <script>
+
+    // ---------------------------
+    // STORAGE
+    // ---------------------------
+
+    const STORAGE_EXPENSES = 'expenses';
+    const STORAGE_SCANS = 'scanCount';
+    const STORAGE_PREMIUM = 'isPremium';
+
+    let expenses = JSON.parse(localStorage.getItem(STORAGE_EXPENSES)) || [];
+    let scanCount = parseInt(localStorage.getItem(STORAGE_SCANS)) || 0;
+    let isPremium = localStorage.getItem(STORAGE_PREMIUM) === 'true';
+
+    // Unlock premium via URL hash
+    if (window.location.hash === '#unlock') {
+      localStorage.setItem(STORAGE_PREMIUM, 'true');
+      isPremium = true;
+      alert('🎉 Premium Unlocked Successfully!');
+    }
+
+    // ---------------------------
+    // UI INIT
+    // ---------------------------
+
+    function init() {
+
+      if (isPremium) {
+        document.getElementById('proBadge').innerHTML =
+          '<span class="badge">PRO</span>';
+      }
+
+      if (isPremium) {
+        document.getElementById('scanInfo').innerHTML =
+          'Unlimited scans available.';
+      } else {
+        document.getElementById('scanInfo').innerHTML =
+          `Free scans used: ${scanCount}/5`;
+      }
+
+      renderExpenses();
+      updateDashboard();
+
+      // Premium custom category
+      if (isPremium) {
+        const select = document.getElementById('category');
+
+        const option = document.createElement('option');
+        option.value = 'Custom';
+        option.innerText = 'Custom';
+        select.appendChild(option);
+
+        select.addEventListener('change', () => {
+          document.getElementById('customCategoryContainer').style.display =
+            select.value === 'Custom' ? 'block' : 'none';
+        });
+      }
+
+      // Disable dark mode for free users
+      if (!isPremium) {
+        document.getElementById('darkBtn').disabled = true;
+      }
+
+    }
+
+    // ---------------------------
+    // ADD EXPENSE
+    // ---------------------------
+
+    function addExpense(data = null) {
+
+      let amount = data?.amount || document.getElementById('amount').value;
+      let category = data?.category || document.getElementById('category').value;
+      let date = data?.date || document.getElementById('date').value;
+      let note = data?.note || document.getElementById('note').value;
+
+      if (category === 'Custom') {
+        category = document.getElementById('customCategory').value || 'Other';
+      }
+
+      if (!amount || !date) {
+        alert('Please complete required fields.');
+        return;
+      }
+
+      const expense = {
+        id: Date.now(),
+        amount: parseFloat(amount),
+        category,
+        date,
+        note
+      };
+
+      expenses.push(expense);
+
+      localStorage.setItem(STORAGE_EXPENSES, JSON.stringify(expenses));
+
+      renderExpenses();
+      updateDashboard();
+
+      // Reset form
+      document.getElementById('amount').value = '';
+      document.getElementById('note').value = '';
+    }
+
+    // ---------------------------
+    // RENDER EXPENSES
+    // ---------------------------
+
+    function renderExpenses() {
+
+      const table = document.getElementById('expenseTable');
+
+      table.innerHTML = '';
+
+      expenses.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      expenses.forEach(expense => {
+
+        table.innerHTML += `
+          <tr>
+            <td>${expense.date}</td>
+            <td>${expense.category}</td>
+            <td>$${expense.amount.toFixed(2)}</td>
+            <td>${expense.note || '-'}</td>
+            <td>
+              <button class="small-btn danger"
+                onclick="deleteExpense(${expense.id})">
+                Delete
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    // ---------------------------
+    // DELETE
+    // ---------------------------
+
+    function deleteExpense(id) {
+
+      expenses = expenses.filter(e => e.id !== id);
+
+      localStorage.setItem(STORAGE_EXPENSES, JSON.stringify(expenses));
+
+      renderExpenses();
+      updateDashboard();
+    }
+
+    // ---------------------------
+    // DASHBOARD
+    // ---------------------------
+
+    let chart;
+
+    function updateDashboard() {
+
+      const now = new Date();
+
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      const monthExpenses = expenses.filter(e => {
+        const d = new Date(e.date);
+        return d.getMonth() === currentMonth &&
+               d.getFullYear() === currentYear;
+      });
+
+      const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+      document.getElementById('monthlyTotal').innerText =
+        '$' + total.toFixed(2);
+
+      const categories = {};
+      expenses.forEach(e => {
+        categories[e.category] = (categories[e.category] || 0) + e.amount;
+      });
+
+      const ctx = document.getElementById('expenseChart');
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(categories),
+          datasets: [{
+            label: 'Expenses',
+            data: Object.values(categories),
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              display: false
+            }
+          }
+        }
+      });
+    }
+
+    // ---------------------------
+    // OCR RECEIPT SCANNER
+    // ---------------------------
+
+    async function scanReceipt() {
+
+      if (!isPremium && scanCount >= 5) {
+        alert('Free scan limit reached. Upgrade to Pro.');
+        return;
+      }
+
+      const fileInput = document.getElementById('receiptImage');
+
+      if (!fileInput.files.length) {
+        alert('Please upload an image.');
+        return;
+      }
+
+      const file = fileInput.files[0];
+
+      document.getElementById('progressContainer').style.display = 'block';
+
+      const progressBar = document.getElementById('progressBar');
+
+      try {
+
+        const result = await Tesseract.recognize(
+          file,
+          'eng',
+          {
+            logger: m => {
+
+              if (m.status === 'recognizing text') {
+                progressBar.style.width =
+                  Math.floor(m.progress * 100) + '%';
+              }
+            }
+          }
+        );
+
+        const text = result.data.text;
+
+        const extracted = extractReceiptData(text);
+
+        showOCRConfirmation(extracted);
+
+        if (!isPremium) {
+          scanCount++;
+          localStorage.setItem(STORAGE_SCANS, scanCount);
+          document.getElementById('scanInfo').innerHTML =
+            `Free scans used: ${scanCount}/5`;
+        }
+
+      } catch (err) {
+
+        console.error(err);
+
+        alert('OCR failed. Please try another image.');
+
+      } finally {
+
+        progressBar.style.width = '0%';
+        document.getElementById('progressContainer').style.display = 'none';
+      }
+    }
+
+    // ---------------------------
+    // EXTRACT RECEIPT DATA
+    // ---------------------------
+
+    function extractReceiptData(text) {
+
+      const lower = text.toLowerCase();
+
+      let amount = '';
+      let date = new Date().toISOString().split('T')[0];
+      let category = 'Other';
+
+      // Amount extraction
+      const amountRegex =
+        /(total|grand total|amount due)[^\d]*(\d+(\.\d{2})?)/i;
+
+      const amountMatch = text.match(amountRegex);
+
+      if (amountMatch) {
+        amount = amountMatch[2];
+      } else {
+        const fallback = text.match(/\d+\.\d{2}/g);
+        if (fallback && fallback.length) {
+          amount = fallback[fallback.length - 1];
+        }
+      }
+
+      // Date extraction
+      const dateRegex =
+        /(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})/;
+
+      const dateMatch = text.match(dateRegex);
+
+      if (dateMatch) {
+        date = dateMatch[1].replace(/\//g, '-');
+      }
+
+      // Auto category
+      if (lower.includes('restaurant') ||
+          lower.includes('cafe') ||
+          lower.includes('food')) {
+        category = 'Food';
+      }
+      else if (lower.includes('uber') ||
+               lower.includes('grab') ||
+               lower.includes('taxi')) {
+        category = 'Transport';
+      }
+      else if (lower.includes('supermarket') ||
+               lower.includes('mall') ||
+               lower.includes('store')) {
+        category = 'Shopping';
+      }
+      else if (lower.includes('electric') ||
+               lower.includes('water') ||
+               lower.includes('internet')) {
+        category = 'Bills';
+      }
+      else if (lower.includes('cinema') ||
+               lower.includes('netflix')) {
+        category = 'Entertainment';
+      }
+
+      return {
+        amount,
+        category,
+        date,
+        note: 'Scanned receipt'
+      };
+    }
+
+    // ---------------------------
+    // SHOW OCR CONFIRMATION
+    // ---------------------------
+
+    function showOCRConfirmation(data) {
+
+      document.getElementById('ocrResult').innerHTML = `
+
+        <div style="margin-top:15px;">
+
+          <input id="ocrAmount"
+            type="number"
+            value="${data.amount}"
+            placeholder="Amount" />
+
+          <select id="ocrCategory">
+            <option ${data.category === 'Food' ? 'selected':''}>Food</option>
+            <option ${data.category === 'Transport' ? 'selected':''}>Transport</option>
+            <option ${data.category === 'Shopping' ? 'selected':''}>Shopping</option>
+            <option ${data.category === 'Bills' ? 'selected':''}>Bills</option>
+            <option ${data.category === 'Entertainment' ? 'selected':''}>Entertainment</option>
+            <option ${data.category === 'Other' ? 'selected':''}>Other</option>
+          </select>
+
+          <input id="ocrDate"
+            type="date"
+            value="${normalizeDate(data.date)}" />
+
+          <textarea id="ocrNote">${data.note}</textarea>
+
+          <button onclick="saveOCRExpense()">
+            Save Scanned Expense
+          </button>
+
+        </div>
+      `;
+    }
+
+    function normalizeDate(dateStr) {
+
+      if (!dateStr) return new Date().toISOString().split('T')[0];
+
+      if (dateStr.includes('-')) {
+
+        const parts = dateStr.split('-');
+
+        if (parts[0].length === 4) {
+          return dateStr;
+        }
+
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+
+      return new Date().toISOString().split('T')[0];
+    }
+
+    function saveOCRExpense() {
+
+      addExpense({
+        amount: document.getElementById('ocrAmount').value,
+        category: document.getElementById('ocrCategory').value,
+        date: document.getElementById('ocrDate').value,
+        note: document.getElementById('ocrNote').value
+      });
+
+      document.getElementById('ocrResult').innerHTML = '';
+
+      alert('Expense saved successfully.');
+    }
+
+    // ---------------------------
+    // CSV EXPORT
+    // ---------------------------
+
+    function exportCSV() {
+
+      let csv =
+        'Date,Category,Amount,Note\n';
+
+      expenses.forEach(e => {
+
+        csv += `"${e.date}","${e.category}","${e.amount}","${e.note}"\n`;
+      });
+
+      if (!isPremium) {
+        csv += '\nGenerated by SmartExpense FREE VERSION';
+      }
+
+      const blob = new Blob([csv], {
+        type: 'text/csv'
+      });
+
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+
+      a.href = url;
+      a.download = 'expenses.csv';
+
+      a.click();
+
+      URL.revokeObjectURL(url);
+    }
+
+    // ---------------------------
+    // PREMIUM
+    // ---------------------------
+
+    function unlockPro() {
+
+      window.location.href = 'STRIPE_PAYMENT_LINK';
+    }
+
+    // ---------------------------
+    // DARK MODE
+    // ---------------------------
+
+    function toggleDarkMode() {
+
+      if (!isPremium) {
+        alert('Dark mode is a premium feature.');
+        return;
+      }
+
+      document.body.classList.toggle('dark');
+    }
+
+    // ---------------------------
+    // RESET
+    // ---------------------------
+
+    function resetApp() {
+
+      if (!confirm('Clear all app data?')) return;
+
+      localStorage.removeItem(STORAGE_EXPENSES);
+      localStorage.removeItem(STORAGE_SCANS);
+      localStorage.removeItem(STORAGE_PREMIUM);
+
+      location.reload();
+    }
+
+    // ---------------------------
+    // TABS
+    // ---------------------------
+
+    function switchTab(tab) {
+
+      document.querySelectorAll('.page')
+        .forEach(p => p.classList.remove('active'));
+
+      document.querySelectorAll('.tab')
+        .forEach(t => t.classList.remove('active'));
+
+      if (tab === 'expenses') {
+        document.getElementById('expensesPage')
+          .classList.add('active');
+      }
+
+      if (tab === 'scanner') {
+        document.getElementById('scannerPage')
+          .classList.add('active');
+      }
+
+      if (tab === 'dashboard') {
+        document.getElementById('dashboardPage')
+          .classList.add('active');
+      }
+
+      event.target.classList.add('active');
+    }
+
+    // ---------------------------
+    // START
+    // ---------------------------
+
+    init();
+
+  </script>
+
+</body>
+</html>
